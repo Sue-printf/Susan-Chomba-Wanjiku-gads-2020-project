@@ -1,1 +1,1 @@
-# Susan-Chomba-Wanjiku-gads-2020-project
+# SUsan Chomba's GADS project submission
