@@ -1,0 +1,197 @@
+#Deploying to Kubernetes v1.6
+
+#Objectives
+
+The new goal of this lab is to get you ready for scaling and managing containers in production.
+
+And that's where deployments come in. Deployments are a declarative way to ensure that the number of pods running is equal to the desired number of pods specified by the user.
+
+#Setup
+1. In GCP console, on the top right toolbar, click the Open Cloud Shell button.
+
+2.  list the active account name with this command:
+gcloud auth list
+
+3.  list the project ID with this command:
+gcloud config list project
+
+4. Define your zone as a project default zone. This way you do not need to specify --zone parameter in gcloud commands.
+gcloud config set compute/zone us-central1-a
+
+5. Get the sample code for creating and running containers and deployments:
+git clone https://github.com/googlecodelabs/orchestrate-with-kubernetes.git
+
+6. Start your Kubernetes cluster with 5 nodes.
+cd orchestrate-with-kubernetes/kubernetes
+
+7. In Cloud Shell, run the following command to start a Kubernetes cluster called bootcamp that runs 5 nodes.
+gcloud container clusters create bootcamp --num-nodes 5 --scopes "https://www.googleapis.com/auth/projecthosting,storage-rw"
+
+#Learn About Deployment Objects
+1. Run the explain command in kubectl to tell you about the deployment object.
+kubectl explain deployment
+
+2. Run the command with the --recursive option to see all of the fields.
+kubectl explain deployment --recursive
+
+3. Use the explain command as you go through the lab to help you understand the structure of a deployment object and understand what the individual fields do.
+kubectl explain deployment.metadata.name
+
+-Create a Deployment
+1. Examine the deployment configuration file.
+cat deployments/auth.yaml
+
+2. Create the deployment object using kubectl create.
+kubectl create -f deployments/auth.yaml
+
+3. Verify that it was created.
+kubectl get deployments
+
+4. Kubernetes creates a ReplicaSet for the deployment.
+
+Run the following command to verify it. You should see a ReplicaSet with a name like auth-xxxxxxx.
+kubectl get replicasets
+
+5. Run the following command to view the pods created for your deployment. A single pod was created when the ReplicaSet was created.
+kubectl get pods
+
+6. With your pod running, it's time to put it behind a service. Use the kubectl create command to create the auth service.
+kubectl create -f services/auth.yaml
+
+7. Do the same to create and expose the hello and frontend deployments.
+kubectl create -f deployments/hello.yaml
+kubectl create -f services/hello.yaml
+
+kubectl create configmap nginx-frontend-conf --from-file=nginx/frontend.conf
+kubectl create secret generic tls-certs --from-file tls/
+kubectl create -f deployments/frontend.yaml
+kubectl create -f services/frontend.yaml
+
+8. Interact with the frontend.
+
+Get its external IP.
+kubectl get services frontend
+
+9. And curl the service.
+curl -ks https://<EXTERNAL-IP>
+
+10.You get the "hello" response. Use the output templating feature of kubectl to run curl as a one-line command.
+curl -ks https://`kubectl get svc frontend -o=jsonpath="{.status.loadBalancer.ingress[0].ip}"`
+
+-Scale a Deployment
+Update the spec.replicas field to scale the deployment.
+
+1. Run the kubectl explain command to see an explanation of the field.
+kubectl explain deployment.spec.replicas
+
+2. You can update the replicas field most easily using the kubectl scale command.
+kubectl scale deployment hello --replicas=5
+
+3. Kubernetes updates the ReplicaSet and starts new pods to equal 5.
+
+Verify there are 5 pods running.
+kubectl get pods | grep hello- | wc -l
+
+4. Scale back the application.
+kubectl scale deployment hello --replicas=3
+
+5. Scale back the application.
+kubectl scale deployment hello --replicas=3
+
+#Rolling Updates
+-Trigger a Rolling Update
+ 
+ 1. Run the following command to update your deployment.
+kubectl edit deployment hello
+
+2. Change the image in containers section to the following, then save and exit.
+containers:
+- name: hello
+  image: kelseyhightower/hello:2.0.0
+
+3. You can see the new ReplicaSet that Kubernetes creates.
+kubectl get replicaset
+
+4. View the new entry in the rollout history.
+kubectl rollout history deployment/hello
+
+-Pause a Rolling Update
+1. Pause the update.
+kubectl rollout pause deployment/hello
+
+2. Verify the current state of the rollout.
+kubectl rollout status deployment/hello
+
+3. Verify this with the pods.
+kubectl get pods -o jsonpath --template='{range .items[*]}{.metadata.name}{"\t"}{"\t"}{.spec.containers[0].image}{"\n"}{end}'
+
+-Resume a Rolling Update
+1. Use the resume command to continue the rollout.
+kubectl rollout resume deployment/hello
+
+2. Run the status command to verify the rollout is complete.
+kubectl rollout status deployment/hello
+
+-Rollback an Update
+1. Use the rollout undo command to roll back to the previous version, then fix any bugs.
+kubectl rollout undo deployment/hello
+
+2. Verify the rollback in the deployment's history.
+kubectl rollout history deployment/hello
+
+3. Verify all pods have rolled back to the previous version.
+kubectl get pods -o jsonpath --template='{range .items[*]}{.metadata.name}{"\t"}{"\t"}{.spec.containers[0].image}{"\n"}{end}'
+
+#Canary Deployments
+A canary deployment consists of a separate deployment from your stable deployment and a service that targets them both at the same time.
+
+1. Examine the file that creates a canary deployment for your new version.
+cat deployments/hello-canary.yaml
+
+2. Create the canary deployment.
+kubectl create -f deployments/hello-canary.yaml
+
+3. After the canary deployment is created, verify you have two deployments hello and hello-canary.
+kubectl get deployments
+
+-Verify the Canary Deployment
+
+You can verify both hello versions being served by requests.
+curl -ks https://`kubectl get svc frontend -o=jsonpath="{.status.loadBalancer.ingress[0].ip}"`/version
+Run the command several times and confirm that hello 1.0.0 serves about ¾ (75%) of requests and 2.0.0 serves about ¼ (25%).
+
+-Clean Up
+You're done using the canary deployment.
+
+Delete it and the service as follows.
+kubectl delete deployment hello-canary
+
+#Blue-Green Deployments
+You can use blue-green deployments if it's more beneficial to modify load balancers to point to a new, fully-tested deployment all at once.
+
+-The Service
+Update the service to use the blue deployment:
+kubectl apply -f services/hello-blue.yaml
+
+-Create a Blue-Green Deployment
+1. Create the green deployment.
+kubectl create -f deployments/hello-green.yaml
+
+2. Verify the blue deployment (1.0.0) is still being used.
+curl -ks https://`kubectl get svc frontend -o=jsonpath="{.status.loadBalancer.ingress[0].ip}"`/version
+
+3. Run the following command to update the service to use the green deployment.
+kubectl apply -f services/hello-green.yaml
+
+4. Verify the green deployment is being used.
+curl -ks https://`kubectl get svc frontend -o=jsonpath="{.status.loadBalancer.ingress[0].ip}"`/version
+
+-Rollback a Blue-Green Deployment
+1. While the green deployment is still running, simply update the service to the old (blue) deployment.
+kubectl apply -f services/hello-blue.yaml
+
+2. Verify that the blue deployment is being used.
+curl -ks https://`kubectl get svc frontend -o=jsonpath="{.status.loadBalancer.ingress[0].ip}"`/version
+
+Exit the cloud shell
+exit
