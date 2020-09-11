@@ -1,1 +1,1 @@
-# SUsan Chomba's GADS project submission
+# Susan Chomba's GADS Project Submission
